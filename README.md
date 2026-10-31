@@ -1,38 +1,40 @@
 # HRL
 
-**Hearthstone Reconnect Lite**
+炉石酒馆战棋的手动拔线工具。点一下悬浮按钮，或按一次快捷键，断开当前对局的连接。
 
-炉石酒馆战棋的轻量手动拔线工具。**点一下悬浮按钮，或按一次快捷键。**
-
-**约 69 KiB · 单文件免安装 · 半透明悬浮按钮 · 快捷键按键录入**
+只做拔线这一件事。单个 EXE，约 69 KiB，免安装。
 
 [下载最新版](https://github.com/wlog0654/HRL/releases/latest) · [反馈问题](https://github.com/wlog0654/HRL/issues)
 
-## 简单，轻量，随手可用
+## 使用
 
-- **一个 EXE 就够了**：下载即用，无需运行 HDT。
-- **按钮随手放**：半透明、可拖动、可隐藏，自动记住位置。
-- **快捷键直接按**：按下想用的组合键即可保存，冲突时保留原设置。
-- **闲置不轮询**：手动触发才查询游戏连接，带防连按保护。
+运行 `HRL.exe`，允许管理员权限。对局中点悬浮按钮，或按 `Ctrl+Shift+R`。右键按钮或托盘图标，可以改快捷键、隐藏按钮、退出。
 
-## 开始使用
+按钮可以拖动，位置会记住。隐藏之后快捷键仍然有效。
 
-1. 下载并解压，运行 `HRL.exe`，允许管理员权限。
-2. 对局中点击悬浮按钮，或按 **Ctrl+Shift+R** 拔线。
-3. 右键按钮或托盘图标，可设置快捷键、隐藏按钮或退出。
+## 行为
 
-按住左键拖动按钮；隐藏后快捷键仍然有效。升级前先退出旧版，原有设置自动沿用。
+- 不轮询，手动触发时才查询连接，两秒内连按只算一次。
+- 找不到唯一可靠的对局连接时不会动手，并提示原因。
+- 只关闭网络连接，不注入 DLL、不读游戏内存、不改防火墙、不结束游戏进程。
+- 快捷键冲突或保存失败时，保留原来的设置。
 
-## 运行环境
+## 限制
 
-Windows 10 / 11 x64，.NET Framework 4.8。悬浮按钮建议搭配窗口或无边框模式。
+Windows 10 / 11 x64，需要 .NET Framework 4.8。只支持 IPv4 TCP。悬浮按钮建议配合窗口或无边框模式。
 
-目前支持 IPv4 TCP；无法可靠识别对局连接时拒绝操作。游戏、区服及代理环境的兼容性以实际使用为准，“已拔”不代表游戏已完成重连。
+提示“已拔”只说明连接已关闭，不代表游戏已经重连成功。各区服和加速器环境无法全部验证，遇到问题请提 Issue。
 
-## 开发与开源
+## 构建
 
-Windows PowerShell 中运行 `powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1`，即可构建并测试，输出 `build\HRL.exe`。
+在 Windows PowerShell 中运行：
 
-[实现与测试](docs/architecture.md) · [设置与诊断](docs/architecture.md#设置与诊断) · [参与贡献](CONTRIBUTING.md) · [更新记录](CHANGELOG.md) · [MIT License](LICENSE)
+```powershell
+.\build.ps1
+```
 
-本项目为独立第三方工具，与 Blizzard 无隶属关系。
+会构建并测试，输出 `build\HRL.exe`。不需要 Visual Studio 或 .NET SDK。
+
+更多内容：[实现与测试](docs/architecture.md) · [设置与诊断](docs/architecture.md#设置与诊断) · [参与贡献](CONTRIBUTING.md) · [更新记录](CHANGELOG.md)
+
+MIT License。独立第三方工具，与 Blizzard 无隶属关系。
