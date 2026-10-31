@@ -1,0 +1,22 @@
+name: 问题反馈
+description: 连接、快捷键或窗口行为异常
+body:
+  - type: textarea
+    id: environment
+    attributes:
+      label: 运行环境
+      description: 程序版本、Windows 版本、是否使用代理或加速器
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤与现象
+      description: 实际发生什么、希望发生什么；快捷键问题请注明组合键
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 错误提示或脱敏诊断
+      description: 请移除不希望公开的本机路径、IP 和其他私人信息

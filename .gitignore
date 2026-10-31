@@ -1,0 +1,11 @@
+/build/
+/dist/
+/.tools/
+/analysis/
+*.log
+*.log.old
+diagnostics.txt
+overlay.ini
+*.tmp
+*.user
+.vs/
