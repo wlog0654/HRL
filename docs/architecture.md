@@ -29,3 +29,28 @@ Windows 会先分发已注册的快捷键，普通窗口的按键事件无法完
 CI 明确跳过四组需要交互桌面的测试。测试通过不能代替真实对局兼容性验证；新版本不自动触发真实游戏拔线。不同物理显示器间的拖动、全部 Windows / 区服 / 代理组合仍需用户反馈。
 
 API 依据：[RegisterHotKey](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-registerhotkey)、[WM_HOTKEY](https://learn.microsoft.com/en-us/windows/win32/inputdev/wm-hotkey)。F12 为调试保留键，因此不允许录入。
+
+## 设置与诊断
+
+运行数据保存在 `%LOCALAPPDATA%\HsReconnectLite\`，沿用旧版目录以兼容已有配置。`overlay.ini` 保存快捷键、按钮显示状态和位置；缺少或损坏的字段回退到默认值。保存失败不会破坏原文件，快捷键保存失败则保留原绑定。
+
+`reconnect-lite.log` 为本地运行日志，超过约 1 MiB 时轮换，最多保留一份 `.old`。右键“保存连接诊断”或执行 `HRL.exe --inspect` 可生成 `diagnostics.txt`，该操作只读取连接信息，不拔线。日志和诊断可能包含路径、PID 与服务器地址，提交 Issue 前请先脱敏；程序不会自动上传。
+
+快捷键支持 Ctrl / Alt / Shift 加字母、数字，以及 F1–F24（F12 除外）。录入后即时保存，Esc 关闭录入窗口；恢复默认也会检查冲突。启动时绑定被占用，按钮仍可使用，也可右键重新设置快捷键。
+
+## 构建与打包
+
+使用 Windows PowerShell 5.1 与系统自带的 .NET Framework C# 编译器，无需 Visual Studio、.NET SDK 或 NuGet 包。
+
+```powershell
+# 完整构建与测试，需要可交互桌面
+.\build.ps1
+# CI：跳过四组桌面交互测试
+.\build.ps1 -SkipDesktopTests
+# 构建、测试并生成 ZIP 与 SHA-256 清单
+.\package.ps1
+# 从绘图源码重新生成多尺寸图标
+.\tools\build-icon.ps1
+```
+
+默认测试不会关闭游戏连接。可选的 `build\NativeTests.exe --close-test` 需要管理员权限，只关闭测试进程自建的回环连接，不由默认构建运行。
