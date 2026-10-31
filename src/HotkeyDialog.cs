@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Drawing;
 using System.Windows.Forms;
 
@@ -11,7 +11,7 @@ namespace HsReconnectLite {
         bool saving;
         public HotkeyDialog(HotkeyBinding current, Func<HotkeyBinding, string> callback) {
             apply = callback;
-            Text = "炉石轻连 · 快捷键"; FormBorderStyle = FormBorderStyle.FixedDialog;
+            Text = "HRL · Hotkeys"; FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false; MinimizeBox = false; StartPosition = FormStartPosition.CenterScreen;
             AutoScaleDimensions = new SizeF(96, 96); AutoScaleMode = AutoScaleMode.Dpi;
             ClientSize = new Size(440, 240); KeyPreview = true;

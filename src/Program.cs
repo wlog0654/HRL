@@ -49,13 +49,13 @@ namespace HsReconnectLite {
                 if (inspect) { Inspect(); return 0; }
                 bool created;
                 using (var mutex = new Mutex(true, smoke ? "Local\\HsReconnectLite-Smoke-" + Process.GetCurrentProcess().Id : "Local\\HsReconnectLite-v1", out created)) {
-                    if (!created) { MessageBox.Show("炉石轻连已在托盘运行。", "炉石轻连"); return 1; }
+                    if (!created) { MessageBox.Show("HRL已在托盘运行。", "HRL"); return 1; }
                     using (var context = new TrayContext(smoke, idleProbe)) Application.Run(context);
                 }
                 return 0;
             } catch (Exception ex) {
                 Log("ERROR " + ex);
-                if (!inspect && !smoke) MessageBox.Show(ex.Message, "炉石轻连", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                if (!inspect && !smoke) MessageBox.Show(ex.Message, "HRL", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return 1;
             }
         }
@@ -168,7 +168,7 @@ namespace HsReconnectLite {
         void RefreshHotkeyText() {
             string binding = hotkey.Current == null ? "快捷键未启用" : hotkey.Current.ToString();
             menu.Items[0].Text = "拔线一次\t" + binding;
-            tray.Text = "炉石轻连 · " + binding;
+            tray.Text = "HRL · " + binding;
         }
         void ConfigureHotkey() {
             if (exiting) return;
@@ -217,7 +217,7 @@ namespace HsReconnectLite {
             if (!preferences.Save(preferencesPath)) Program.Log("Could not save overlay preferences; current session remains usable.");
         }
         void Notify(string message, bool error) {
-            tray.BalloonTipTitle = error ? "拔线未执行或失败" : "炉石轻连";
+            tray.BalloonTipTitle = error ? "拔线未执行或失败" : "HRL";
             tray.BalloonTipText = message;
             tray.BalloonTipIcon = error ? ToolTipIcon.Warning : ToolTipIcon.Info;
             tray.ShowBalloonTip(3500);

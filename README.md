@@ -1,13 +1,13 @@
-# 炉石轻连 · Hearthstone Reconnect Lite
+# HRL · Hearthstone Reconnect Lite
 
-<img src="assets/icon.png" width="72" height="72" alt="炉石轻连图标">
+<img src="assets/icon.png" width="72" height="72" alt="HRL图标">
 
 一个只做手动拔线的 Windows 小工具。单个 EXE，半透明悬浮按钮、托盘菜单、自定义全局快捷键；不依赖 HDT。
 
 ## 使用
 
-1. 从 [Releases](https://github.com/wlog0654/hearthstone-reconnect-lite/releases) 下载 ZIP 并解压。
-2. 双击 `HearthstoneReconnectLite.exe`，接受管理员权限提示。
+1. 从 [Releases](https://github.com/wlog0654/HRL/releases) 下载 ZIP 并解压。
+2. 双击 `HRL.exe`，接受管理员权限提示。
 3. 在炉石对局中点击悬浮按钮，或按默认快捷键 **Ctrl+Shift+R**。
 4. 按住按钮拖动位置。右键按钮或托盘图标，可以隐藏按钮、设置快捷键或退出。
 
@@ -44,7 +44,7 @@
 | `reconnect-lite.log` | 本地运行日志；超过约 1 MiB 时轮换，最多保留一份 `.old` |
 | `diagnostics.txt` | 右键“保存连接诊断”手动生成的只读连接信息 |
 
-也可以运行 `HearthstoneReconnectLite.exe --inspect`，只生成诊断，不拔线。设置文件写入失败不会破坏原文件；更改快捷键保存失败则不应用该更改。
+也可以运行 `HRL.exe --inspect`，只生成诊断，不拔线。设置文件写入失败不会破坏原文件；更改快捷键保存失败则不应用该更改。
 
 诊断和日志可能包含本机路径、PID 和服务器地址。提交 Issue 前请检查并删除不希望公开的信息；程序不会自动上传这些文件。
 
@@ -58,7 +58,7 @@
 powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
 ```
 
-输出为 `build\HearthstoneReconnectLite.exe`。默认同时运行全部测试，部分窗口与菜单测试需要可交互的 Windows 桌面。
+输出为 `build\HRL.exe`。默认同时运行全部测试，部分窗口与菜单测试需要可交互的 Windows 桌面。
 
 ```powershell
 # 无交互桌面的 CI：明确跳过四组桌面交互测试

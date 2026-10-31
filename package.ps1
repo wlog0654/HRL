@@ -1,9 +1,10 @@
-param([switch]$SkipDesktopTests)
+﻿param([switch]$SkipDesktopTests)
 $ErrorActionPreference = 'Stop'
 & "$PSScriptRoot\build.ps1" -SkipDesktopTests:$SkipDesktopTests
-$exePath = Join-Path $PSScriptRoot 'build\HearthstoneReconnectLite.exe'
-$version = (Get-Item -LiteralPath $exePath).VersionInfo.FileVersion
-$releaseName = "HearthstoneReconnectLite-$version-win-x64"
+$exePath = Join-Path $PSScriptRoot 'build\HRL.exe'
+$fileVersion = [version](Get-Item -LiteralPath $exePath).VersionInfo.FileVersion
+$version = "{0}.{1}.{2}" -f $fileVersion.Major, $fileVersion.Minor, $fileVersion.Build
+$releaseName = "HRL-$version-win-x64"
 $distRoot = Join-Path $PSScriptRoot 'dist'
 $stagingRoot = Join-Path (Join-Path (Join-Path $PSScriptRoot 'build') ('package-' + [Guid]::NewGuid().ToString('N'))) $releaseName
 New-Item -ItemType Directory -Path $stagingRoot -Force | Out-Null

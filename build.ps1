@@ -8,7 +8,7 @@ $uiSources = @('Hotkey.cs', 'HotkeyCapture.cs', 'HotkeyDialog.cs', 'OverlayInter
 $connectionSources = @("$projectRoot\src\ConnectionSelector.cs", "$projectRoot\src\NativeTcp.cs")
 $appSources = $connectionSources + $uiSources + @("$projectRoot\src\Program.cs", "$projectRoot\src\AssemblyInfo.cs")
 $desktopResources = @("/win32icon:$projectRoot\assets\AppIcon.ico", "/resource:$projectRoot\assets\AppIcon.ico,HsReconnectLite.AppIcon.ico", "/win32manifest:$projectRoot\src\app.manifest")
-& $compilerPath /nologo /optimize+ /target:winexe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll "/out:$outputDirectory\HearthstoneReconnectLite.exe" @desktopResources @appSources
+& $compilerPath /nologo /optimize+ /target:winexe /platform:x64 /reference:System.Windows.Forms.dll /reference:System.Drawing.dll "/out:$outputDirectory\HRL.exe" @desktopResources @appSources
 if ($LASTEXITCODE -ne 0) { throw 'App build failed' }
 $testSpecs = @(
     @{Name='HotkeyTests'; Sources=$appSources},

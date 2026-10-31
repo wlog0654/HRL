@@ -38,7 +38,7 @@ namespace HsReconnectLite {
             FormBorderStyle = FormBorderStyle.None; ShowInTaskbar = false; TopMost = true;
             StartPosition = FormStartPosition.Manual; AutoScaleMode = AutoScaleMode.None;
             BackColor = Color.FromArgb(24, 32, 36); ForeColor = Color.FromArgb(238, 244, 242);
-            Opacity = 0.68; Text = "炉石轻连悬浮按钮";
+            Opacity = 0.68; Text = "HRL Floating Button";
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer, true);
             using (Graphics graphics = CreateGraphics()) currentDpi = DesktopUi.WindowDpi(Handle, (int)Math.Round(graphics.DpiX));
             ClientSize = new Size(DesktopUi.Pixels(76, currentDpi), DesktopUi.Pixels(40, currentDpi));
