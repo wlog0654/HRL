@@ -2,7 +2,7 @@
 
 程序入口负责单实例、按需 UAC 提权和只读诊断；`TrayContext` 将悬浮窗、托盘与快捷键汇入同一个异步操作，并进行防重入与两秒防连按。进程、连接及游戏日志线索每次重新读取。
 
-`ConnectionSelector` 只选择唯一可靠的对局连接，`NativeTcp` 使用 IP Helper API 枚举 IPv4 TCP 表并通过 `SetTcpEntry(DELETE_TCB)` 关闭目标。不会注入 DLL、读取游戏内存、修改防火墙或结束游戏进程。IPv6、UDP 与特殊代理拓扑不在当前实现范围内。
+`ConnectionSelector` 只选择唯一可靠的对局连接，`NativeTcp` 使用 IP Helper API 枚举 IPv4 TCP 表并通过 `SetTcpEntry(DELETE_TCB)` 关闭目标。拔线操作不会注入 DLL、读取游戏内存、修改防火墙或结束游戏进程。IPv6、UDP 与特殊代理拓扑不在当前实现范围内。
 
 `HotkeyBinding` 限定允许的按键类型；`HotkeyRegistration` 通过消息窗口注册全局快捷键，两个 ID 轮换，先登记候选、保存设置，成功后释放旧注册。失败则释放候选、保留旧注册。录入窗口期间屏蔽回调，并检查消息键值以忽略旧消息。
 
@@ -26,7 +26,7 @@ Windows 会先分发已注册的快捷键，普通窗口的按键事件无法完
 | DesktopUiTests | 图标尺寸、菜单状态及 USER / GDI 资源释放 |
 | MenuVisualTests | 实际原生菜单打开、截图和取消 |
 
-CI 明确跳过四组需要交互桌面的测试。测试通过不能代替真实对局兼容性验证；新版本不自动触发真实游戏拔线。不同物理显示器间的拖动、全部 Windows / 区服 / 代理组合仍需用户反馈。
+CI 明确跳过五组需要交互桌面的测试。测试通过不能代替真实对局兼容性验证；新版本不自动触发真实游戏拔线。不同物理显示器间的拖动、全部 Windows / 区服 / 代理组合仍需用户反馈。
 
 API 依据：[RegisterHotKey](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-registerhotkey)、[WM_HOTKEY](https://learn.microsoft.com/en-us/windows/win32/inputdev/wm-hotkey)。F12 为调试保留键，因此不允许录入。
 
@@ -45,7 +45,7 @@ API 依据：[RegisterHotKey](https://learn.microsoft.com/en-us/windows/win32/ap
 ```powershell
 # 完整构建与测试，需要可交互桌面
 .\build.ps1
-# CI：跳过四组桌面交互测试
+# CI：跳过五组桌面交互测试
 .\build.ps1 -SkipDesktopTests
 # 构建、测试并生成 ZIP 与 SHA-256 清单
 .\package.ps1
@@ -54,3 +54,13 @@ API 依据：[RegisterHotKey](https://learn.microsoft.com/en-us/windows/win32/ap
 ```
 
 默认测试不会关闭游戏连接。可选的 `build\NativeTests.exe --close-test` 需要管理员权限，只关闭测试进程自建的回环连接，不由默认构建运行。
+
+## 关闭与重启炉石
+
+右键菜单的“只关闭炉石（强制）”与“重启炉石”是独立于拔线的显式操作，会结束 Hearthstone.exe 进程树。后台调用系统 taskkill，最多等待约 5 秒退出；若原来运行着游戏，重启前额外等待 3 秒。通过战网 `--exec="launch WTCG"` 启动，最多发送 6 次请求，每次观察 2 秒，检测到进程后停止重试；进程出现不代表已经进入对局。
+
+战网路径保存在本机 `%LOCALAPPDATA%\HsReconnectLite\battle-net-path.txt`，无效时通过文件选择器重新指定。先验证启动器路径，再关闭游戏。路径不包含在公开仓库或通用发布包中。
+
+这些操作与拔线共用忙碌状态和两秒防连按保护；运行中禁用其他游戏操作，避免关闭、启动与拔线交错。退出 HRL 会取消等待及后续启动请求，已经执行的关闭操作无法撤销。只在操作期间短时查询进程，闲置不增加轮询。
+
+`GameActionTests` 使用模拟运行环境验证关闭、启动、超时、有限重试、取消及路径配置；`GameMenuTests` 用无害回调验证菜单接线、防重入和恢复。默认测试不执行真实的游戏关闭或重启。

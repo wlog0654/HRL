@@ -121,6 +121,11 @@ namespace HsReconnectLite {
         readonly ToolStripMenuItem overlayToggle;
         readonly OverlayPreferences preferences;
         readonly Action disconnectOperation;
+        readonly IGameRuntime gameRuntime;
+        readonly GameActions gameActions;
+        readonly CancellationTokenSource actionStop = new CancellationTokenSource();
+        readonly ToolStripItem closeGame, restartGame;
+        bool selectingLauncher;
         readonly bool smoke;
         readonly string preferencesPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HsReconnectLite", "overlay.ini");
         readonly Stopwatch clock = Stopwatch.StartNew();
@@ -129,9 +134,11 @@ namespace HsReconnectLite {
         volatile bool exiting;
         Icon trayIcon;
         int trayIconPixels;
-        public TrayContext(bool smoke, bool idleProbe, Action operation = null) {
+        public TrayContext(bool smoke, bool idleProbe, Action operation = null, IGameRuntime runtime = null) {
             this.smoke = smoke;
             disconnectOperation = operation ?? CloseCurrentConnection;
+            gameRuntime = runtime ?? new WindowsGameRuntime();
+            gameActions = new GameActions(gameRuntime);
             preferences = smoke ? new OverlayPreferences() : OverlayPreferences.Load(preferencesPath);
             menu = new ContextMenuStrip();
             menu.Items.Add("拔线一次", null, delegate { Reconnect(); });
@@ -139,6 +146,10 @@ namespace HsReconnectLite {
             overlayToggle = new ToolStripMenuItem("显示悬浮按钮") { Checked = preferences.Enabled };
             overlayToggle.Click += delegate { SetOverlayVisible(!preferences.Enabled); };
             menu.Items.Add(overlayToggle);
+            menu.Items.Add(new ToolStripSeparator());
+            closeGame = menu.Items.Add("只关闭炉石（强制）", null, delegate { GameCommand(false); });
+            restartGame = menu.Items.Add("重启炉石", null, delegate { GameCommand(true); });
+            menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("保存连接诊断", null, delegate {
                 try { Program.Inspect(); Notify("诊断已保存：" + Path.Combine(Program.DataRoot, "diagnostics.txt"), false); }
                 catch (Exception ex) { Notify(ex.Message, true); }
@@ -217,33 +228,60 @@ namespace HsReconnectLite {
             if (!preferences.Save(preferencesPath)) Program.Log("Could not save overlay preferences; current session remains usable.");
         }
         void Notify(string message, bool error) {
-            tray.BalloonTipTitle = error ? "拔线未执行或失败" : "HRL";
+            tray.BalloonTipTitle = error ? "操作未执行或失败" : "HRL";
             tray.BalloonTipText = message;
             tray.BalloonTipIcon = error ? ToolTipIcon.Warning : ToolTipIcon.Info;
             tray.ShowBalloonTip(3500);
         }
         void Reconnect() {
-            if (exiting || hotkeyDialog != null || pending || clock.ElapsedMilliseconds - lastAttempt < 2000) return;
+            StartOperation(delegate { disconnectOperation(); return "已关闭对局连接，等待游戏自行重连。"; }, "已拔");
+        }
+        void GameCommand(bool restart) {
+            if (!CanOperate()) return;
+            string config = Path.Combine(Program.DataRoot, "battle-net-path.txt");
+            string launcher = restart ? LauncherPreferences.Load(config) : null;
+            if (restart && !gameRuntime.LauncherExists(launcher)) {
+                selectingLauncher = true; hotkey.Suppressed = true;
+                try {
+                    using (var picker = new OpenFileDialog { Title = "选择战网 Battle.net.exe", Filter = "Battle.net.exe|Battle.net.exe", CheckFileExists = true }) {
+                        if (picker.ShowDialog() != DialogResult.OK) return;
+                        launcher = picker.FileName;
+                        if (!gameRuntime.LauncherExists(launcher)) { Notify("请选择有效的 Battle.net.exe。", true); return; }
+                        if (!LauncherPreferences.Save(config, launcher)) { Notify("无法保存战网路径，未关闭炉石。", true); return; }
+                    }
+                } finally { selectingLauncher = false; hotkey.Suppressed = false; }
+            }
+            if (!CanOperate()) return;
+            var token = actionStop.Token;
+            StartOperation(delegate { return gameActions.Execute(restart, launcher, token); }, restart ? "已启" : "已关");
+        }
+        bool CanOperate() {
+            return !exiting && hotkeyDialog == null && !selectingLauncher && !pending && clock.ElapsedMilliseconds - lastAttempt >= 2000;
+        }
+        void StartOperation(Func<string> operation, string feedback) {
+            if (!CanOperate()) return;
             lastAttempt = clock.ElapsedMilliseconds;
-            pending = true; menu.Items[0].Enabled = false; overlay.SetFeedback("稍候", true, false);
+            pending = true; SetOperationMenus(false); overlay.SetFeedback("稍候", true, false);
             Task.Run(delegate {
                 Exception failure = null;
-                try { disconnectOperation(); }
+                string result = null;
+                try { result = operation(); }
                 catch (Exception ex) { failure = ex; Program.Log("FAILED " + ex.Message); }
                 if (exiting) return;
                 try {
                     // Explicit dispatch also works when a native menu or nested message loop
                     // has changed SynchronizationContext.Current.
-                    overlay.BeginInvoke((Action)delegate { CompleteReconnect(failure); });
+                    overlay.BeginInvoke((Action)delegate { CompleteOperation(failure, result, feedback); });
                 } catch (InvalidOperationException) { /* Window closed while operation finished. */ }
             });
         }
-        void CompleteReconnect(Exception failure) {
+        void SetOperationMenus(bool enabled) { menu.Items[0].Enabled = enabled; closeGame.Enabled = enabled; restartGame.Enabled = enabled; }
+        void CompleteOperation(Exception failure, string result, string feedback) {
             if (exiting) return;
             try {
-                if (failure == null) { overlay.SetFeedback("已拔", false, false); Notify("已关闭对局连接，等待游戏自行重连。", false); }
+                if (failure == null) { overlay.SetFeedback(feedback, false, false); Notify(result, false); }
                 else { overlay.SetFeedback("失败", false, true); Notify(failure.Message, true); }
-            } finally { pending = false; menu.Items[0].Enabled = true; }
+            } finally { pending = false; SetOperationMenus(true); }
         }
         static void CloseCurrentConnection() {
             uint pid; string ip; int port;
@@ -258,7 +296,9 @@ namespace HsReconnectLite {
             Program.Log("TCP CLOSED " + target);
         }
         protected override void ExitThreadCore() {
+            if (exiting) return;
             exiting = true;
+            actionStop.Cancel(); actionStop.Dispose();
             if (timer != null) { timer.Stop(); timer.Dispose(); }
             if (hotkeyDialog != null) hotkeyDialog.Close();
             SavePreferences(); overlay.Dispose();
