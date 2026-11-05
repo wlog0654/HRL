@@ -64,3 +64,11 @@ API 依据：[RegisterHotKey](https://learn.microsoft.com/en-us/windows/win32/ap
 这些操作与拔线共用忙碌状态和两秒防连按保护；运行中禁用其他游戏操作，避免关闭、启动与拔线交错。退出 HRL 会取消等待及后续启动请求，已经执行的关闭操作无法撤销。只在操作期间短时查询进程，闲置不增加轮询。
 
 `GameActionTests` 使用模拟运行环境验证关闭、启动、超时、有限重试、取消及路径配置；`GameMenuTests` 用无害回调验证菜单接线、防重入和恢复。默认测试不执行真实的游戏关闭或重启。
+
+## 重启后收起战网窗口
+
+检测到炉石进程后，最多再等待 10 秒确认可见游戏主窗口。确认后，仅向配置路径下、标题为“战网”或 Battle.net 的唯一可见无属主主窗口发送一次 WM_CLOSE 请求。发送前重新核对主窗口句柄与所属进程，身份不确定则保留窗口。其效果遵循战网自己的点叉设置，不强制终止战网进程，也不修改战网设置。
+
+该步骤只在重启操作内执行，没有常驻监控。启动失败、窗口等待超时或取消时不关闭战网；战网已自行退出或关闭请求未能发送，不会将已成功启动的炉石报告为启动失败。发送请求不代表战网已经处理完成。
+
+API 依据：[WM_CLOSE](https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-close)、[PostMessage](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-postmessagew)。模拟测试验证窗口出现前后、超时、取消、窗口身份过滤与进程退出竞态，不自动重启游戏或操作真实战网窗口。

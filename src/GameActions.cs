@@ -2,6 +2,8 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
 
 namespace HsReconnectLite {
     public interface IGameRuntime {
@@ -10,6 +12,8 @@ namespace HsReconnectLite {
         void CloseTree();
         void Launch(string path);
         void Delay(int milliseconds, CancellationToken cancellation);
+        bool IsGameWindowReady();
+        bool RequestLauncherClose(string path);
     }
     public sealed class GameActions {
         readonly IGameRuntime runtime;
@@ -30,18 +34,86 @@ namespace HsReconnectLite {
             if (wasRunning) runtime.Delay(3000, cancellation);
             for (int attempt = 0; attempt < 6; attempt++) {
                 cancellation.ThrowIfCancellationRequested();
-                if (runtime.IsRunning()) return "已检测到炉石进程。";
+                if (runtime.IsRunning()) return CompleteRestart(launcher, cancellation);
                 runtime.Launch(launcher);
                 for (int check = 0; check < 4; check++) {
                     runtime.Delay(500, cancellation);
                     cancellation.ThrowIfCancellationRequested();
-                    if (runtime.IsRunning()) return "已检测到炉石进程，游戏是否进入对局请以画面为准。";
+                    if (runtime.IsRunning()) return CompleteRestart(launcher, cancellation);
                 }
             }
             throw new InvalidOperationException("已发送 6 次启动请求，仍未检测到炉石。请检查战网是否已登录、是否正在更新。不会继续重试。");
         }
+        string CompleteRestart(string launcher, CancellationToken cancellation) {
+            // Wait only during this restart. Do not close the launcher while login or
+            // updates might still require attention, or if the game exits again.
+            for (int check = 0; check < 20; check++) {
+                cancellation.ThrowIfCancellationRequested();
+                if (!runtime.IsRunning()) throw new InvalidOperationException("炉石在启动期间退出，已保留战网窗口。");
+                bool ready;
+                try { ready = runtime.IsGameWindowReady(); }
+                catch (Win32Exception) { break; }
+                catch (InvalidOperationException) { break; }
+                if (ready) {
+                    cancellation.ThrowIfCancellationRequested();
+                    bool sent = false;
+                    try { sent = runtime.RequestLauncherClose(launcher); }
+                    catch (ArgumentException) { /* Launcher exited before PID revalidation. */ }
+                    catch (Win32Exception) { }
+                    catch (InvalidOperationException) { }
+                    return sent ? "炉石窗口已出现，已向战网主窗口发送关闭请求。" : "炉石窗口已出现；如战网仍显示，可手动点叉收起。";
+                }
+                runtime.Delay(500, cancellation);
+            }
+            return "已检测到炉石进程，但尚未确认游戏窗口，已保留战网窗口。";
+        }
+    }
+    public static class LauncherWindowPolicy {
+        public static bool Matches(string executable, string configured, string title, bool visible, bool owned) {
+            if (!visible || owned || String.IsNullOrWhiteSpace(executable) || String.IsNullOrWhiteSpace(configured)) return false;
+            if (!String.Equals(title, "战网", StringComparison.OrdinalIgnoreCase) && !String.Equals(title, "Battle.net", StringComparison.OrdinalIgnoreCase)
+                && !String.Equals(title, "Blizzard Battle.net", StringComparison.OrdinalIgnoreCase)) return false;
+            try {
+                return String.Equals(Path.GetFileName(executable), "Battle.net.exe", StringComparison.OrdinalIgnoreCase)
+                    && String.Equals(Path.GetFullPath(executable), Path.GetFullPath(configured), StringComparison.OrdinalIgnoreCase);
+            } catch (ArgumentException) { return false; } catch (IOException) { return false; } catch (NotSupportedException) { return false; }
+        }
     }
     public sealed class WindowsGameRuntime : IGameRuntime {
+        [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr window);
+        [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr window, uint command);
+        [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint pid);
+        [DllImport("user32.dll", SetLastError = true)] static extern bool PostMessage(IntPtr window, uint message, IntPtr wparam, IntPtr lparam);
+        public bool IsGameWindowReady() {
+            var games = Process.GetProcessesByName("Hearthstone");
+            try { return games.Length == 1 && !games[0].HasExited && games[0].MainWindowHandle != IntPtr.Zero && IsWindowVisible(games[0].MainWindowHandle); }
+            finally { foreach (var game in games) game.Dispose(); }
+        }
+        public bool RequestLauncherClose(string path) {
+            IntPtr target = IntPtr.Zero; int targetPid = 0;
+            var launchers = Process.GetProcessesByName("Battle.net");
+            try {
+                foreach (var launcher in launchers) {
+                    try {
+                        IntPtr window = launcher.MainWindowHandle;
+                        if (window == IntPtr.Zero || !LauncherWindowPolicy.Matches(launcher.MainModule.FileName, path, launcher.MainWindowTitle,
+                            IsWindowVisible(window), GetWindow(window, 4) != IntPtr.Zero)) continue;
+                        if (target != IntPtr.Zero) return false; // Ambiguous: do not close multiple windows.
+                        target = window; targetPid = launcher.Id;
+                    } catch (Win32Exception) { } catch (InvalidOperationException) { }
+                }
+                if (target == IntPtr.Zero) return false;
+                uint currentPid; GetWindowThreadProcessId(target, out currentPid);
+                if (currentPid != (uint)targetPid || !IsWindowVisible(target)) return false;
+                using (var current = Process.GetProcessById(targetPid)) {
+                    if (current.MainWindowHandle != target) return false;
+                    if (!LauncherWindowPolicy.Matches(current.MainModule.FileName, path, current.MainWindowTitle, true, GetWindow(target, 4) != IntPtr.Zero)) return false;
+                    uint verifiedPid; GetWindowThreadProcessId(target, out verifiedPid);
+                    if (verifiedPid != currentPid) return false;
+                    return PostMessage(target, 0x0010, IntPtr.Zero, IntPtr.Zero); // WM_CLOSE, same request as the window's X button.
+                }
+            } finally { foreach (var launcher in launchers) launcher.Dispose(); }
+        }
         public bool IsRunning() {
             var processes = Process.GetProcessesByName("Hearthstone");
             try { return processes.Length != 0; }

@@ -16,6 +16,8 @@ class GameMenuTests {
         public void CloseTree() { Interlocked.Increment(ref Closed); Release.WaitOne(); Running = false; }
         public void Launch(string path) { Launched++; Running = true; }
         public void Delay(int milliseconds, CancellationToken cancellation) { cancellation.ThrowIfCancellationRequested(); }
+        public bool IsGameWindowReady() { return true; }
+        public bool RequestLauncherClose(string path) { return true; }
     }
     static int failed;
     static void Check(string name, bool ok) { Console.WriteLine((ok ? "PASS " : "FAIL ") + name); if (!ok) failed++; }
