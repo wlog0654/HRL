@@ -5,7 +5,7 @@ using System.Threading;
 using System.IO;
 using HsReconnectLite;
 class GameActionTests {
-    sealed class Fake : IGameRuntime, IGameExitCleanup {
+    class Fake : IGameRuntime, IGameExitCleanup {
         public bool Running, Exists = true, RefuseExit;
         public int Closed, Launched, StartAt = 1;
         public int LauncherCloses, WindowChecks, ReadyAfter = 1;
@@ -25,18 +25,26 @@ class GameActionTests {
         public bool IsGameWindowReady() { if (OnWindowCheck != null) OnWindowCheck(); return ++WindowChecks >= ReadyAfter; }
         public bool RequestLauncherClose(string path) { LauncherCloses++; if (LauncherExitedDuringClose) throw new ArgumentException("Launcher already exited"); return CloseAccepted; }
     }
+    sealed class LaunchProgressFake : Fake, IGameLaunchProgress {
+        public int ReceiptAt = 2;
+        public bool HasLaunchStarted() { return Launched >= ReceiptAt; }
+    }
     static int failed;
     static void Check(string name, bool ok) { Console.WriteLine((ok ? "PASS " : "FAIL ") + name); if (!ok) failed++; }
     static bool Fails(Action action) { try { action(); return false; } catch (InvalidOperationException) { return true; } }
     static int Main() {
+        var accepted = new LaunchProgressFake { StartAt = 100 };
+        string acceptedResult = "";
+        try { acceptedResult = new GameActions(accepted, "守望先锋", 4, 8, 0).Execute(true, "launcher", CancellationToken.None); } catch (InvalidOperationException) { }
+        Check("OW retries ignored request and completes on NEAC receipt without window", accepted.Launched == 2 && accepted.WindowChecks == 0 && accepted.LauncherCloses == 1 && acceptedResult.Contains("启动流程"));
         var start = new Fake { Running = true }; new GameActions(start, "守望先锋").Execute(true, "launcher", CancellationToken.None, true);
         Check("start-only preserves running game and its companion", start.Closed == 0 && start.CleanupCalls == 0 && start.Launched == 0);
         start = new Fake(); new GameActions(start, "守望先锋").Execute(true, "launcher", CancellationToken.None, true);
         Check("starting a stopped game cleans stale companion before launch", start.CleanupCalls == 1 && start.Launched == 1);
         start = new Fake { CleanupFails = true };
         Check("cleanup failure prevents a stuck relaunch", Fails(delegate { new GameActions(start, "守望先锋").Execute(true, "launcher", CancellationToken.None, true); }) && start.Launched == 0);
-        start = new Fake { StartAt = 100 };
-        Check("OW uses one launch request with a longer startup budget", Fails(delegate { new GameActions(start, "守望先锋", 1, 120, 60).Execute(true, "launcher", CancellationToken.None, true); }) && start.Launched == 1 && start.Waits.Count == 120);
+        var ignored = new LaunchProgressFake { ReceiptAt = 100, StartAt = 100 };
+        Check("ignored OW launch requests have a short bounded retry budget", Fails(delegate { new GameActions(ignored, "守望先锋", 4, 8, 0).Execute(true, "launcher", CancellationToken.None); }) && ignored.Launched == 4 && ignored.Waits.Count == 32);
         bool invalidPathRejected = false;
         try { invalidPathRejected = !new WindowsGameRuntime().LauncherExists("invalid\0Battle.net.exe"); } catch (ArgumentException) { }
         Check("corrupted launcher path is safely rejected", invalidPathRejected);

@@ -124,6 +124,8 @@ namespace HsReconnectLite {
         readonly GameActions gameActions;
         readonly CancellationTokenSource actionStop = new CancellationTokenSource();
         readonly ToolStripItem closeGame, restartGame, closeOverwatch, restartOverwatch;
+        readonly ToolStripItem cancelOperation;
+        CancellationTokenSource operationStop;
         readonly IGameRuntime overwatchRuntimeOverride;
         bool selectingLauncher;
         readonly bool smoke;
@@ -148,11 +150,15 @@ namespace HsReconnectLite {
             overlayToggle.Click += delegate { SetOverlayVisible(!preferences.Enabled); };
             menu.Items.Add(overlayToggle);
             menu.Items.Add(new ToolStripSeparator());
-            closeGame = menu.Items.Add("只关闭炉石（强制）", null, delegate { GameCommand(false); });
+            closeGame = menu.Items.Add("关闭炉石", null, delegate { GameCommand(false); });
             restartGame = menu.Items.Add("重启炉石", null, delegate { GameCommand(true); });
             menu.Items.Add(new ToolStripSeparator());
-            closeOverwatch = menu.Items.Add("关闭 OW（含 NEAC）", null, delegate { OverwatchCommand(false); });
-            restartOverwatch = menu.Items.Add("重启 OW", null, delegate { OverwatchCommand(true); });
+            closeOverwatch = menu.Items.Add("关闭ow", null, delegate { OverwatchCommand(false); });
+            restartOverwatch = menu.Items.Add("重启ow", null, delegate { OverwatchCommand(true); });
+            cancelOperation = menu.Items.Add("取消等待", null, delegate {
+                if (operationStop != null) { try { operationStop.Cancel(); } catch (ObjectDisposedException) { } }
+            });
+            cancelOperation.Available = false;
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("保存连接诊断", null, delegate {
                 try { Program.Inspect(); }
@@ -231,15 +237,14 @@ namespace HsReconnectLite {
             if (!preferences.Save(preferencesPath)) Program.Log("Could not save overlay preferences; current session remains usable.");
         }
         void Reconnect() {
-            StartOperation(delegate { disconnectOperation(); return "已关闭对局连接，等待游戏自行重连。"; }, "已拔");
+            StartOperation(delegate(CancellationToken token) { token.ThrowIfCancellationRequested(); disconnectOperation(); return "已关闭对局连接，等待游戏自行重连。"; }, "已拔");
         }
         void GameCommand(bool restart) {
             if (!CanOperate()) return;
             string launcher = null;
             if (restart && !TryProgramPath("battle-net-path.txt", "Battle.net.exe", gameRuntime.LauncherExists, out launcher)) return;
             if (!CanOperate()) return;
-            var token = actionStop.Token;
-            StartOperation(delegate { return gameActions.Execute(restart, launcher, token); }, restart ? "已启" : "已关");
+            StartOperation(delegate(CancellationToken token) { return gameActions.Execute(restart, launcher, token); }, restart ? "已启" : "已关");
         }
         void OverwatchCommand(bool restart) {
             if (!CanOperate()) return;
@@ -255,9 +260,8 @@ namespace HsReconnectLite {
             string launcher = null;
             if (restart && !TryProgramPath("battle-net-path.txt", "Battle.net.exe", runtime.LauncherExists, out launcher)) return;
             if (!CanOperate()) return;
-            var token = actionStop.Token;
-            var actions = new GameActions(runtime, "守望先锋", 1, 120, 60);
-            StartOperation(delegate { return actions.Execute(restart, launcher, token); }, restart ? "已启" : "已关");
+            var actions = new GameActions(runtime, "守望先锋", 4, 8, 0, Program.Log);
+            StartOperation(delegate(CancellationToken token) { return actions.Execute(restart, launcher, token); }, restart ? "已发" : "已关");
         }
         bool TryProgramPath(string configName, string fileName, Func<string, bool> validate, out string path) {
             string config = Path.Combine(Program.DataRoot, configName);
@@ -278,15 +282,19 @@ namespace HsReconnectLite {
         bool CanOperate() {
             return !exiting && hotkeyDialog == null && !selectingLauncher && !pending && clock.ElapsedMilliseconds - lastAttempt >= 2000;
         }
-        void StartOperation(Func<string> operation, string feedback) {
+        void StartOperation(Func<CancellationToken, string> operation, string feedback) {
             if (!CanOperate()) return;
             lastAttempt = clock.ElapsedMilliseconds;
             pending = true; SetOperationMenus(false); overlay.SetFeedback("稍候", true, false);
+            var stop = CancellationTokenSource.CreateLinkedTokenSource(actionStop.Token);
+            operationStop = stop;
             Task.Run(delegate {
                 Exception failure = null;
                 string result = null;
-                try { result = operation(); }
+                try { result = operation(stop.Token); }
+                catch (OperationCanceledException ex) { failure = ex; Program.Log("CANCELLED game operation."); }
                 catch (Exception ex) { failure = ex; Program.Log("FAILED " + ex.Message); }
+                finally { stop.Dispose(); }
                 if (exiting) return;
                 try {
                     // Explicit dispatch also works when a native menu or nested message loop
@@ -295,13 +303,13 @@ namespace HsReconnectLite {
                 } catch (InvalidOperationException) { /* Window closed while operation finished. */ }
             });
         }
-        void SetOperationMenus(bool enabled) { menu.Items[0].Enabled = enabled; closeGame.Enabled = enabled; restartGame.Enabled = enabled; closeOverwatch.Enabled = enabled; restartOverwatch.Enabled = enabled; }
+        void SetOperationMenus(bool enabled) { menu.Items[0].Enabled = enabled; closeGame.Enabled = enabled; restartGame.Enabled = enabled; closeOverwatch.Enabled = enabled; restartOverwatch.Enabled = enabled; cancelOperation.Available = !enabled; }
         void CompleteOperation(Exception failure, string result, string feedback) {
             if (exiting) return;
             try {
                 if (failure == null) { overlay.SetFeedback(feedback, false, false); Program.Log("DONE " + result); }
-                else { overlay.SetFeedback("失败", false, true); }
-            } finally { pending = false; SetOperationMenus(true); }
+                else { overlay.SetFeedback(failure is OperationCanceledException ? "已停" : "失败", false, !(failure is OperationCanceledException)); }
+            } finally { operationStop = null; pending = false; SetOperationMenus(true); }
         }
         static void CloseCurrentConnection() {
             uint pid; string ip; int port;

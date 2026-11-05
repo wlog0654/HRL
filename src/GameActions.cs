@@ -16,13 +16,17 @@ namespace HsReconnectLite {
         bool RequestLauncherClose(string path);
     }
     public interface IGameExitCleanup { void CleanupAfterExit(CancellationToken cancellation); }
+    public interface IGameLaunchProgress { bool HasLaunchStarted(); }
     public sealed class GameActions {
         readonly IGameRuntime runtime;
         readonly string gameName;
         readonly int launchAttempts, startupChecks, windowChecks;
-        public GameActions(IGameRuntime runtime, string name = "炉石", int launchAttempts = 6, int startupChecks = 4, int windowChecks = 20) {
+        readonly Action<string> trace;
+        public GameActions(IGameRuntime runtime, string name = "炉石", int launchAttempts = 6, int startupChecks = 4, int windowChecks = 20, Action<string> trace = null) {
             this.runtime = runtime; gameName = name; this.launchAttempts = launchAttempts; this.startupChecks = startupChecks; this.windowChecks = windowChecks;
+            this.trace = trace;
         }
+        void Record(string message) { if (trace != null) trace(gameName + ": " + message); }
         public string Execute(bool restart, string launcher, CancellationToken cancellation, bool startOnly = false) {
             try { return ExecuteCore(restart, launcher, cancellation, startOnly).Replace("炉石", gameName); }
             catch (InvalidOperationException ex) {
@@ -44,23 +48,35 @@ namespace HsReconnectLite {
             }
             cancellation.ThrowIfCancellationRequested();
             var cleanup = runtime as IGameExitCleanup;
-            if (cleanup != null) cleanup.CleanupAfterExit(cancellation);
+            if (cleanup != null) { Record("cleanup begin"); cleanup.CleanupAfterExit(cancellation); Record("cleanup complete"); }
             cancellation.ThrowIfCancellationRequested();
             if (!restart) return wasRunning ? "炉石已关闭。" : "炉石未运行，无需关闭。";
             if (wasRunning) runtime.Delay(3000, cancellation);
             for (int attempt = 0; attempt < launchAttempts; attempt++) {
                 cancellation.ThrowIfCancellationRequested();
+                if (LaunchReceived()) return CompleteLaunchRequest(launcher, cancellation);
                 if (runtime.IsRunning()) return CompleteRestart(launcher, cancellation);
+                Record("launch request " + (attempt + 1) + "/" + launchAttempts);
                 runtime.Launch(launcher);
                 for (int check = 0; check < startupChecks; check++) {
                     runtime.Delay(500, cancellation);
                     cancellation.ThrowIfCancellationRequested();
+                    if (LaunchReceived()) return CompleteLaunchRequest(launcher, cancellation);
                     if (runtime.IsRunning()) return CompleteRestart(launcher, cancellation);
                 }
             }
             throw new InvalidOperationException("已发送 " + launchAttempts + " 次启动请求，仍未检测到炉石。请检查战网是否已登录、是否正在更新。不会继续重试。");
         }
+        bool LaunchReceived() { var progress = runtime as IGameLaunchProgress; return progress != null && progress.HasLaunchStarted(); }
+        string CompleteLaunchRequest(string launcher, CancellationToken cancellation) {
+            cancellation.ThrowIfCancellationRequested();
+            Record("OW/NEAC launch receipt confirmed; release wait without requiring game window");
+            try { runtime.RequestLauncherClose(launcher); }
+            catch (ArgumentException) { } catch (Win32Exception) { } catch (InvalidOperationException) { }
+            return "已检测到 OW 启动流程；完成授权后等待游戏启动。";
+        }
         string CompleteRestart(string launcher, CancellationToken cancellation) {
+            if (runtime is IGameLaunchProgress) return CompleteLaunchRequest(launcher, cancellation);
             // Wait only during this restart. Do not close the launcher while login or
             // updates might still require attention, or if the game exits again.
             for (int check = 0; check < windowChecks; check++) {

@@ -58,7 +58,7 @@ namespace HsReconnectLite {
             }
         }
     }
-    public sealed class OverwatchRuntime : WindowsGameRuntime, IGameExitCleanup {
+    public sealed class OverwatchRuntime : WindowsGameRuntime, IGameExitCleanup, IGameLaunchProgress {
         readonly string gamePath, directory;
         readonly IGameProcessControl processes;
         static readonly string[] companions = { "OWNeacClient", "NeacLoader" };
@@ -68,6 +68,12 @@ namespace HsReconnectLite {
             this.processes = processes ?? new GameProcessControl();
         }
         public override bool IsRunning() { return processes.Find("Overwatch").Length != 0; }
+        public bool HasLaunchStarted() {
+            foreach (int pid in processes.Find("Overwatch")) if (processes.Matches(pid, gamePath)) return true;
+            foreach (string name in companions) foreach (int pid in processes.Find(name))
+                if (processes.Matches(pid, Path.Combine(directory, name + ".exe"))) return true;
+            return false;
+        }
         public override void CloseTree() {
             foreach (int pid in processes.Find("Overwatch")) {
                 if (!processes.Matches(pid, gamePath)) {
