@@ -20,8 +20,10 @@ namespace HsReconnectLite {
                 var exact = matches.Where(r => r.RemoteIp == logIp && r.RemotePort == logPort).ToList();
                 return exact.Count == 1 ? exact[0] : null;
             }
-            // Custom ports/proxies require a logged endpoint; never guess a login or local IPC socket.
-            var logged = active.Where(r => r.RemoteIp == logIp && r.RemotePort == logPort && r.RemotePort != 1119).ToList();
+            // The hint comes specifically from Network.GotoGameServe, not login logs.
+            // Game servers can also use 1119. Require an exact, unique live match;
+            // never pick another 1119 connection when the hint is stale or absent.
+            var logged = active.Where(r => r.RemoteIp == logIp && r.RemotePort == logPort).ToList();
             return logged.Count == 1 ? logged[0] : null;
         }
     }

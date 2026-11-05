@@ -34,6 +34,16 @@ class SelectionTests {
         Connection custom = Row(42, "1.2.3.4", 5555, 5);
         Check("nonstandard endpoint requires exact log match", custom,
             ConnectionSelector.Select(new[] { custom }, 42, custom.RemoteIp, custom.RemotePort));
+        Connection gameOn1119 = Row(42, "192.0.2.30", 1119, 5);
+        Connection authOn1119 = Row(42, "192.0.2.31", 1119, 5);
+        Check("1119 game endpoint explicitly logged by GotoGameServe is supported", gameOn1119,
+            ConnectionSelector.Select(new[] { gameOn1119, authOn1119, loopback }, 42, gameOn1119.RemoteIp, 1119));
+        Check("1119 endpoints never guessed without game-server evidence", null,
+            ConnectionSelector.Select(new[] { gameOn1119, authOn1119 }, 42, null, 0));
+        Check("stale 1119 game hint never falls back to other connection", null,
+            ConnectionSelector.Select(new[] { authOn1119 }, 42, gameOn1119.RemoteIp, 1119));
+        Check("duplicate exact 1119 endpoints rejected", null,
+            ConnectionSelector.Select(new[] { gameOn1119, Row(42, gameOn1119.RemoteIp, 1119, 5) }, 42, gameOn1119.RemoteIp, 1119));
         Console.WriteLine("Failures: " + failures);
         return failures == 0 ? 0 : 1;
     }
