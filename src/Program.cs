@@ -124,7 +124,7 @@ namespace HsReconnectLite {
         readonly IGameRuntime gameRuntime;
         readonly GameActions gameActions;
         readonly CancellationTokenSource actionStop = new CancellationTokenSource();
-        readonly ToolStripItem closeGame, restartGame, startOverwatch, restartOverwatch;
+        readonly ToolStripItem closeGame, restartGame, closeOverwatch, restartOverwatch;
         readonly IGameRuntime overwatchRuntimeOverride;
         bool selectingLauncher;
         readonly bool smoke;
@@ -152,7 +152,7 @@ namespace HsReconnectLite {
             closeGame = menu.Items.Add("只关闭炉石（强制）", null, delegate { GameCommand(false); });
             restartGame = menu.Items.Add("重启炉石", null, delegate { GameCommand(true); });
             menu.Items.Add(new ToolStripSeparator());
-            startOverwatch = menu.Items.Add("启动 OW", null, delegate { OverwatchCommand(false); });
+            closeOverwatch = menu.Items.Add("关闭 OW（含 NEAC）", null, delegate { OverwatchCommand(false); });
             restartOverwatch = menu.Items.Add("重启 OW", null, delegate { OverwatchCommand(true); });
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("保存连接诊断", null, delegate {
@@ -260,11 +260,12 @@ namespace HsReconnectLite {
                 }, out game)) return;
                 runtime = new OverwatchRuntime(game);
             }
-            string launcher;
-            if (!TryProgramPath("battle-net-path.txt", "Battle.net.exe", runtime.LauncherExists, out launcher) || !CanOperate()) return;
+            string launcher = null;
+            if (restart && !TryProgramPath("battle-net-path.txt", "Battle.net.exe", runtime.LauncherExists, out launcher)) return;
+            if (!CanOperate()) return;
             var token = actionStop.Token;
             var actions = new GameActions(runtime, "守望先锋", 1, 120, 60);
-            StartOperation(delegate { return actions.Execute(true, launcher, token, !restart); }, "已启");
+            StartOperation(delegate { return actions.Execute(restart, launcher, token); }, restart ? "已启" : "已关");
         }
         bool TryProgramPath(string configName, string fileName, Func<string, bool> validate, out string path) {
             string config = Path.Combine(Program.DataRoot, configName);
@@ -302,7 +303,7 @@ namespace HsReconnectLite {
                 } catch (InvalidOperationException) { /* Window closed while operation finished. */ }
             });
         }
-        void SetOperationMenus(bool enabled) { menu.Items[0].Enabled = enabled; closeGame.Enabled = enabled; restartGame.Enabled = enabled; startOverwatch.Enabled = enabled; restartOverwatch.Enabled = enabled; }
+        void SetOperationMenus(bool enabled) { menu.Items[0].Enabled = enabled; closeGame.Enabled = enabled; restartGame.Enabled = enabled; closeOverwatch.Enabled = enabled; restartOverwatch.Enabled = enabled; }
         void CompleteOperation(Exception failure, string result, string feedback) {
             if (exiting) return;
             try {

@@ -35,7 +35,7 @@ class GameMenuTests {
             var menu = (ContextMenuStrip)Field(context, "menu");
             var close = menu.Items.Cast<ToolStripItem>().Single(i => i.Text == "只关闭炉石（强制）");
             var restart = menu.Items.Cast<ToolStripItem>().Single(i => i.Text == "重启炉石");
-            var startOw = menu.Items.Cast<ToolStripItem>().Single(i => i.Text == "启动 OW");
+            var startOw = menu.Items.Cast<ToolStripItem>().Single(i => i.Text == "关闭 OW（含 NEAC）");
             var restartOw = menu.Items.Cast<ToolStripItem>().Single(i => i.Text == "重启 OW");
             close.PerformClick(); Pump(150);
             Check("close menu invokes only game action", runtime.Closed == 1 && disconnects == 0 && runtime.Launched == 0);
@@ -47,9 +47,9 @@ class GameMenuTests {
             Pump(1900); restart.PerformClick(); Pump(200);
             Check("restart menu uses launcher action without disconnect", runtime.Launched == 1 && disconnects == 0);
             Pump(1900); startOw.PerformClick(); Pump(200);
-            Check("OW start menu preserves an already running OW", ow.Closed == 0 && ow.Cleanups == 0 && ow.Launched == 0);
+            Check("OW close menu closes game and cleans NEAC without launching", ow.Closed == 1 && ow.Cleanups == 1 && ow.Launched == 0);
             Pump(1900); restartOw.PerformClick(); Pump(200);
-            Check("OW restart menu closes cleans and launches only OW", ow.Closed == 1 && ow.Cleanups == 1 && ow.Launched == 1 && runtime.Closed == 1 && disconnects == 0);
+            Check("OW restart menu launches after close and NEAC cleanup", ow.Closed == 1 && ow.Cleanups == 2 && ow.Launched == 1 && runtime.Closed == 1 && disconnects == 0);
             context.ExitThread();
         }
         runtime.Release.Dispose();

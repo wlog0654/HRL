@@ -4,7 +4,7 @@
 
 单个 EXE，免安装。附带关闭、重启炉石的快捷操作。
 
-也可启动、重启 OW；重启时在游戏退出后清理残留的 `OWNeacClient`（任务管理器可能显示为 neacprotect）与 `NeacLoader`，游戏窗口出现后收起战网。
+也可关闭、重启 OW；游戏退出后清理残留的 `OWNeacClient`（任务管理器可能显示为 neacprotect）与 `NeacLoader`，重启后收起战网。
 
 [下载最新版](https://github.com/wlog0654/HRL/releases/latest) · [反馈问题](https://github.com/wlog0654/HRL/issues)
 
@@ -14,7 +14,7 @@
 
 右键菜单也可以**只关闭炉石（强制）**或**重启炉石**。首次重启时选择战网 `Battle.net.exe`，之后会记住路径。重启检测到炉石窗口后，会自动向战网主窗口发送“点叉”关闭请求，收起方式遵循战网自己的设置。关闭和重启会结束游戏进程，请按需使用。
 
-**启动 OW** 会保留已经运行的游戏；**重启 OW** 会先退出游戏并清理同一安装目录的 NEAC 残留。首次使用选择 `_retail_\Overwatch.exe`，路径会记住。
+**关闭 OW（含 NEAC）** 会关闭游戏并清理同一安装目录的 NEAC 残留；**重启 OW** 在完成这些步骤后重新启动游戏。首次使用选择 `_retail_\Overwatch.exe`，路径会记住。
 
 按钮可以拖动，位置会记住。隐藏之后快捷键仍然有效。
 
