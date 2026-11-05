@@ -72,3 +72,13 @@ API 依据：[RegisterHotKey](https://learn.microsoft.com/en-us/windows/win32/ap
 该步骤只在重启操作内执行，没有常驻监控。启动失败、窗口等待超时或取消时不关闭战网；战网已自行退出或关闭请求未能发送，不会将已成功启动的炉石报告为启动失败。发送请求不代表战网已经处理完成。
 
 API 依据：[WM_CLOSE](https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-close)、[PostMessage](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-postmessagew)。模拟测试验证窗口出现前后、超时、取消、窗口身份过滤与进程退出竞态，不自动重启游戏或操作真实战网窗口。
+
+## OW 启动与 NEAC 残留
+
+OW 使用战网产品代码 Pro，通过战网启动。启动模式保留正在运行的 OW 与 NEAC；游戏已关闭时先清理残留。重启模式先关闭指定路径的 Overwatch.exe，再清理同目录 OWNeacClient.exe 与 NeacLoader.exe，等待退出后启动。OWNeacClient 在任务管理器中可能显示为 neacprotect。不会停止服务、修改驱动或绕过游戏保护，也不会在已运行的 OW 中单独清理 NEAC。
+
+路径保存在本机 `overwatch-path.txt`。进程读取使用 QueryFullProcessImageName 的有限查询权限，终止前在同一个进程句柄上重新验证路径，避免 PID 复用误关。同名不同目录的进程不清理；读取身份或关闭失败会停止重启并提示。已退出进程视为已完成，清理后最多等待 10 秒。
+
+OW 只发送一次启动请求，最多等待 60 秒检测游戏进程，随后最多等待 30 秒确认游戏窗口。不会每两秒重发启动请求。窗口确认使用可见性和所属 PID，适配拒绝 HasExited 查询的受保护进程。随后复用战网点叉收起逻辑。所有等待仅发生在手动操作期间，与炉石操作共享忙碌保护与取消信号。
+
+测试覆盖启动不打断正在运行的游戏、NEAC 清理顺序、路径过滤、取消和进程退出竞态。1.5.0 开发时，经用户授权在空闲 OW 中实际检查了退出、残留清理、重启和战网收起；未修改游戏文件、账号或系统保护设置。

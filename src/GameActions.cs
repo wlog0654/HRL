@@ -15,14 +15,27 @@ namespace HsReconnectLite {
         bool IsGameWindowReady();
         bool RequestLauncherClose(string path);
     }
+    public interface IGameExitCleanup { void CleanupAfterExit(CancellationToken cancellation); }
     public sealed class GameActions {
         readonly IGameRuntime runtime;
-        public GameActions(IGameRuntime runtime) { this.runtime = runtime; }
-        public string Execute(bool restart, string launcher, CancellationToken cancellation) {
+        readonly string gameName;
+        readonly int launchAttempts, startupChecks, windowChecks;
+        public GameActions(IGameRuntime runtime, string name = "炉石", int launchAttempts = 6, int startupChecks = 4, int windowChecks = 20) {
+            this.runtime = runtime; gameName = name; this.launchAttempts = launchAttempts; this.startupChecks = startupChecks; this.windowChecks = windowChecks;
+        }
+        public string Execute(bool restart, string launcher, CancellationToken cancellation, bool startOnly = false) {
+            try { return ExecuteCore(restart, launcher, cancellation, startOnly).Replace("炉石", gameName); }
+            catch (InvalidOperationException ex) {
+                if (gameName == "炉石") throw;
+                throw new InvalidOperationException(ex.Message.Replace("炉石", gameName), ex);
+            }
+        }
+        string ExecuteCore(bool restart, string launcher, CancellationToken cancellation, bool startOnly) {
             // Validate before closing the game: a stale path must never leave it closed.
             if (restart && !runtime.LauncherExists(launcher)) throw new InvalidOperationException("找不到 Battle.net.exe，请重新选择战网启动器。");
             cancellation.ThrowIfCancellationRequested();
             bool wasRunning = runtime.IsRunning();
+            if (startOnly && wasRunning) return CompleteRestart(launcher, cancellation);
             if (wasRunning) runtime.CloseTree();
             int checks = 0;
             while (runtime.IsRunning()) {
@@ -30,24 +43,27 @@ namespace HsReconnectLite {
                 runtime.Delay(500, cancellation);
             }
             cancellation.ThrowIfCancellationRequested();
+            var cleanup = runtime as IGameExitCleanup;
+            if (cleanup != null) cleanup.CleanupAfterExit(cancellation);
+            cancellation.ThrowIfCancellationRequested();
             if (!restart) return wasRunning ? "炉石已关闭。" : "炉石未运行，无需关闭。";
             if (wasRunning) runtime.Delay(3000, cancellation);
-            for (int attempt = 0; attempt < 6; attempt++) {
+            for (int attempt = 0; attempt < launchAttempts; attempt++) {
                 cancellation.ThrowIfCancellationRequested();
                 if (runtime.IsRunning()) return CompleteRestart(launcher, cancellation);
                 runtime.Launch(launcher);
-                for (int check = 0; check < 4; check++) {
+                for (int check = 0; check < startupChecks; check++) {
                     runtime.Delay(500, cancellation);
                     cancellation.ThrowIfCancellationRequested();
                     if (runtime.IsRunning()) return CompleteRestart(launcher, cancellation);
                 }
             }
-            throw new InvalidOperationException("已发送 6 次启动请求，仍未检测到炉石。请检查战网是否已登录、是否正在更新。不会继续重试。");
+            throw new InvalidOperationException("已发送 " + launchAttempts + " 次启动请求，仍未检测到炉石。请检查战网是否已登录、是否正在更新。不会继续重试。");
         }
         string CompleteRestart(string launcher, CancellationToken cancellation) {
             // Wait only during this restart. Do not close the launcher while login or
             // updates might still require attention, or if the game exits again.
-            for (int check = 0; check < 20; check++) {
+            for (int check = 0; check < windowChecks; check++) {
                 cancellation.ThrowIfCancellationRequested();
                 if (!runtime.IsRunning()) throw new InvalidOperationException("炉石在启动期间退出，已保留战网窗口。");
                 bool ready;
@@ -79,14 +95,27 @@ namespace HsReconnectLite {
             } catch (ArgumentException) { return false; } catch (IOException) { return false; } catch (NotSupportedException) { return false; }
         }
     }
-    public sealed class WindowsGameRuntime : IGameRuntime {
+    public class WindowsGameRuntime : IGameRuntime {
+        readonly string processName, productCode;
+        public WindowsGameRuntime(string processName = "Hearthstone", string productCode = "WTCG") {
+            if (!((processName == "Hearthstone" && productCode == "WTCG") || (processName == "Overwatch" && productCode == "Pro"))) throw new ArgumentException("Unknown game");
+            this.processName = processName; this.productCode = productCode;
+        }
         [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr window);
         [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr window, uint command);
         [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint pid);
         [DllImport("user32.dll", SetLastError = true)] static extern bool PostMessage(IntPtr window, uint message, IntPtr wparam, IntPtr lparam);
         public bool IsGameWindowReady() {
-            var games = Process.GetProcessesByName("Hearthstone");
-            try { return games.Length == 1 && !games[0].HasExited && games[0].MainWindowHandle != IntPtr.Zero && IsWindowVisible(games[0].MainWindowHandle); }
+            var games = Process.GetProcessesByName(processName);
+            try {
+                if (games.Length != 1) return false;
+                // Protected OW processes can deny HasExited's broader process access.
+                // Window ownership and visibility confirm readiness without opening that handle.
+                IntPtr window = games[0].MainWindowHandle;
+                if (window == IntPtr.Zero || !IsWindowVisible(window)) return false;
+                uint owner; GetWindowThreadProcessId(window, out owner);
+                return owner == (uint)games[0].Id;
+            }
             finally { foreach (var game in games) game.Dispose(); }
         }
         public bool RequestLauncherClose(string path) {
@@ -114,8 +143,8 @@ namespace HsReconnectLite {
                 }
             } finally { foreach (var launcher in launchers) launcher.Dispose(); }
         }
-        public bool IsRunning() {
-            var processes = Process.GetProcessesByName("Hearthstone");
+        public virtual bool IsRunning() {
+            var processes = Process.GetProcessesByName(processName);
             try { return processes.Length != 0; }
             finally { foreach (var process in processes) process.Dispose(); }
         }
@@ -123,9 +152,9 @@ namespace HsReconnectLite {
             try { return !String.IsNullOrWhiteSpace(path) && String.Equals(Path.GetFileName(path), "Battle.net.exe", StringComparison.OrdinalIgnoreCase) && File.Exists(path); }
             catch (ArgumentException) { return false; }
         }
-        public void CloseTree() {
+        public virtual void CloseTree() {
             using (var command = Process.Start(new ProcessStartInfo {
-                FileName = Path.Combine(Environment.SystemDirectory, "taskkill.exe"), Arguments = "/F /T /IM Hearthstone.exe",
+                FileName = Path.Combine(Environment.SystemDirectory, "taskkill.exe"), Arguments = "/F /T /IM " + processName + ".exe",
                 UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden
             })) {
                 if (command == null) throw new InvalidOperationException("无法启动炉石关闭命令。");
@@ -138,7 +167,7 @@ namespace HsReconnectLite {
         }
         public void Launch(string path) {
             using (var launcher = Process.Start(new ProcessStartInfo {
-                FileName = path, WorkingDirectory = Path.GetDirectoryName(path), Arguments = "--exec=\"launch WTCG\"", UseShellExecute = false
+                FileName = path, WorkingDirectory = Path.GetDirectoryName(path), Arguments = "--exec=\"launch " + productCode + "\"", UseShellExecute = false
             })) {
                 if (launcher == null) throw new InvalidOperationException("无法向战网发送启动请求。");
             }

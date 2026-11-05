@@ -5,13 +5,16 @@ using System.Threading;
 using System.IO;
 using HsReconnectLite;
 class GameActionTests {
-    sealed class Fake : IGameRuntime {
+    sealed class Fake : IGameRuntime, IGameExitCleanup {
         public bool Running, Exists = true, RefuseExit;
         public int Closed, Launched, StartAt = 1;
         public int LauncherCloses, WindowChecks, ReadyAfter = 1;
         public bool CloseAccepted = true;
         public Action OnWindowCheck;
         public bool LauncherExitedDuringClose;
+        public int CleanupCalls;
+        public bool CleanupFails;
+        public void CleanupAfterExit(CancellationToken cancellation) { CleanupCalls++; if (CleanupFails) throw new InvalidOperationException("cleanup failed"); }
         public Action OnDelay;
         public List<int> Waits = new List<int>();
         public bool IsRunning() { return Running; }
@@ -26,6 +29,14 @@ class GameActionTests {
     static void Check(string name, bool ok) { Console.WriteLine((ok ? "PASS " : "FAIL ") + name); if (!ok) failed++; }
     static bool Fails(Action action) { try { action(); return false; } catch (InvalidOperationException) { return true; } }
     static int Main() {
+        var start = new Fake { Running = true }; new GameActions(start, "守望先锋").Execute(true, "launcher", CancellationToken.None, true);
+        Check("start-only preserves running game and its companion", start.Closed == 0 && start.CleanupCalls == 0 && start.Launched == 0);
+        start = new Fake(); new GameActions(start, "守望先锋").Execute(true, "launcher", CancellationToken.None, true);
+        Check("starting a stopped game cleans stale companion before launch", start.CleanupCalls == 1 && start.Launched == 1);
+        start = new Fake { CleanupFails = true };
+        Check("cleanup failure prevents a stuck relaunch", Fails(delegate { new GameActions(start, "守望先锋").Execute(true, "launcher", CancellationToken.None, true); }) && start.Launched == 0);
+        start = new Fake { StartAt = 100 };
+        Check("OW uses one launch request with a longer startup budget", Fails(delegate { new GameActions(start, "守望先锋", 1, 120, 60).Execute(true, "launcher", CancellationToken.None, true); }) && start.Launched == 1 && start.Waits.Count == 120);
         bool invalidPathRejected = false;
         try { invalidPathRejected = !new WindowsGameRuntime().LauncherExists("invalid\0Battle.net.exe"); } catch (ArgumentException) { }
         Check("corrupted launcher path is safely rejected", invalidPathRejected);
