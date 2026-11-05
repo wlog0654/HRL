@@ -49,13 +49,12 @@ namespace HsReconnectLite {
                 if (inspect) { Inspect(); return 0; }
                 bool created;
                 using (var mutex = new Mutex(true, smoke ? "Local\\HsReconnectLite-Smoke-" + Process.GetCurrentProcess().Id : "Local\\HsReconnectLite-v1", out created)) {
-                    if (!created) { MessageBox.Show("HRL已在托盘运行。", "HRL"); return 1; }
+                    if (!created) { Log("HRL already running; duplicate instance exited."); return 1; }
                     using (var context = new TrayContext(smoke, idleProbe)) Application.Run(context);
                 }
                 return 0;
             } catch (Exception ex) {
                 Log("ERROR " + ex);
-                if (!inspect && !smoke) MessageBox.Show(ex.Message, "HRL", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return 1;
             }
         }
@@ -156,8 +155,8 @@ namespace HsReconnectLite {
             restartOverwatch = menu.Items.Add("重启 OW", null, delegate { OverwatchCommand(true); });
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("保存连接诊断", null, delegate {
-                try { Program.Inspect(); Notify("诊断已保存：" + Path.Combine(Program.DataRoot, "diagnostics.txt"), false); }
-                catch (Exception ex) { Notify(ex.Message, true); }
+                try { Program.Inspect(); }
+                catch (Exception ex) { Program.Log("DIAGNOSTICS FAILED " + ex.Message); }
             });
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("退出", null, delegate { ExitThread(); });
@@ -171,7 +170,6 @@ namespace HsReconnectLite {
             string hotkeyError;
             if (!hotkey.TryChange(preferences.Hotkey, null, out hotkeyError)) {
                 Program.Log("HOTKEY UNAVAILABLE " + hotkeyError);
-                if (!smoke) Notify(hotkeyError + " 可右键设置其他快捷键，或点击悬浮按钮。", true);
             }
             RefreshHotkeyText();
             Program.Log("START floating=" + preferences.Enabled + " hotkey=" + (hotkey.Current != null) + " admin=" + new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator));
@@ -179,7 +177,7 @@ namespace HsReconnectLite {
                 timer = new System.Windows.Forms.Timer { Interval = idleProbe ? 7000 : 1500 };
                 timer.Tick += delegate { Program.Log("SMOKE PASS: tray and floating button started; no disconnect invoked."); ExitThread(); };
                 timer.Start();
-            } else if (hotkey.Current != null) Notify("点击悬浮按钮或按 " + hotkey.Current + " 拔线；右键可设置快捷键。", false);
+            }
         }
         void RefreshHotkeyText() {
             string binding = hotkey.Current == null ? "快捷键未启用" : hotkey.Current.ToString();
@@ -219,7 +217,7 @@ namespace HsReconnectLite {
         void ShowMenu(Point point) {
             if (exiting) return;
             try { RefreshTrayIcon(); NativeContextMenu.Show(menu, point); }
-            catch (Exception ex) { Program.Log("MENU FAILED " + ex.Message); Notify("菜单暂时无法打开，请重试。", true); }
+            catch (Exception ex) { Program.Log("MENU FAILED " + ex.Message); }
         }
         void SetOverlayVisible(bool visible) {
             preferences.Enabled = visible; overlayToggle.Checked = visible;
@@ -231,12 +229,6 @@ namespace HsReconnectLite {
             if (smoke || overlay == null || overlay.IsDisposed) return;
             preferences.Position = overlay.Location;
             if (!preferences.Save(preferencesPath)) Program.Log("Could not save overlay preferences; current session remains usable.");
-        }
-        void Notify(string message, bool error) {
-            tray.BalloonTipTitle = error ? "操作未执行或失败" : "HRL";
-            tray.BalloonTipText = message;
-            tray.BalloonTipIcon = error ? ToolTipIcon.Warning : ToolTipIcon.Info;
-            tray.ShowBalloonTip(3500);
         }
         void Reconnect() {
             StartOperation(delegate { disconnectOperation(); return "已关闭对局连接，等待游戏自行重连。"; }, "已拔");
@@ -276,8 +268,8 @@ namespace HsReconnectLite {
                     using (var picker = new OpenFileDialog { Title = "选择 " + fileName, Filter = fileName + "|" + fileName, CheckFileExists = true }) {
                         if (picker.ShowDialog() != DialogResult.OK) return false;
                         path = picker.FileName;
-                        if (!validate(path)) { Notify("请选择有效的 " + fileName + "。", true); return false; }
-                        if (!LauncherPreferences.Save(config, path)) { Notify("无法保存程序路径，未执行游戏操作。", true); return false; }
+                        if (!validate(path)) { Program.Log("INVALID PROGRAM PATH: " + fileName); overlay.SetFeedback("失败", false, true); return false; }
+                        if (!LauncherPreferences.Save(config, path)) { Program.Log("PROGRAM PATH SAVE FAILED; no game action executed."); overlay.SetFeedback("失败", false, true); return false; }
                     }
                 } finally { selectingLauncher = false; hotkey.Suppressed = false; }
             }
@@ -307,8 +299,8 @@ namespace HsReconnectLite {
         void CompleteOperation(Exception failure, string result, string feedback) {
             if (exiting) return;
             try {
-                if (failure == null) { overlay.SetFeedback(feedback, false, false); Notify(result, false); }
-                else { overlay.SetFeedback("失败", false, true); Notify(failure.Message, true); }
+                if (failure == null) { overlay.SetFeedback(feedback, false, false); Program.Log("DONE " + result); }
+                else { overlay.SetFeedback("失败", false, true); }
             } finally { pending = false; SetOperationMenus(true); }
         }
         static void CloseCurrentConnection() {
