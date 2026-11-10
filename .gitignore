@@ -6,6 +6,9 @@
 *.log.old
 diagnostics.txt
 overlay.ini
+battle-net-path.txt
+overwatch-path.txt
+log.config
 *.tmp
 *.user
 .vs/

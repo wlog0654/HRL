@@ -14,6 +14,8 @@ Windows 会先分发已注册的快捷键，普通窗口的按键事件无法完
 
 ## 自动验证
 
+`LogRetentionTests` 在独立临时目录中验证容量水位、旧到新删除、当前及最新会话保护、锁定文件跳过、取消和路径边界，不读取或删除真实游戏日志。
+
 | 测试 | 验证范围 |
 | --- | --- |
 | SelectionTests | 旧日志、目标 PID、登录端口、多候选与不可靠目标拒绝 |
@@ -31,6 +33,36 @@ CI 明确跳过五组需要交互桌面的测试。测试通过不能代替真�
 API 依据：[RegisterHotKey](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-registerhotkey)、[WM_HOTKEY](https://learn.microsoft.com/en-us/windows/win32/inputdev/wm-hotkey)。F12 为调试保留键，因此不允许录入。
 
 ## 设置与诊断
+
+### 程序路径
+
+HRL 不依赖固定盘符或作者的安装目录。`battle-net-path.txt` 与 `overwatch-path.txt` 分别保存当前 Windows 用户选择的战网、OW 可执行文件绝对路径，位于 `%LOCALAPPDATA%\HsReconnectLite\`，不随发行包分发。
+
+- 关闭炉石不需要任何路径；重启炉石通过用户所选战网的游戏库启动，不需要单独填写炉石安装位置。
+- 战网要求选择 `Battle.net.exe`，OW 要求选择游戏目录中的 `_retail_\Overwatch.exe`，不要选择快捷方式或 `OWNeacClient.exe`。首次未配置或文件已不存在时会弹出选择框。
+- 选择、校验和保存路径成功后才开始游戏操作；取消选择或保存失败不会关闭游戏。中文、空格路径通过程序路径参数传递，不拼接执行 shell 命令。
+- OW 的 `OWNeacClient.exe` 和 `NeacLoader.exe` 始终从所选 `Overwatch.exe` 的同一目录推导，只处理匹配路径的进程；另一安装目录的同名进程不清理。
+- 已保存路径仍存在但想切换安装位置时，先退出 HRL，将对应的路径配置文件改名备份，再打开 HRL 使用相应菜单重新选择。
+- 拔线、连接诊断及历史日志清理由唯一运行中的炉石进程获取实际安装目录。无法唯一确认或访问路径时跳过，不扫描其他磁盘猜测位置。未运行炉石时不清理游戏日志。
+
+### 炉石日志配置
+
+某些对局服务器使用 1119，HRL 需要当前会话的 `Network.GotoGameServe()` 日志地址与实时连接精确匹配。只在本机手动修改过的游戏配置不会随 HRL 发布包传播；首次使用者若日志没有持续更新，可在关闭炉石后备份 `%LOCALAPPDATA%\Blizzard\Hearthstone\log.config`，在保留原有记牌器配置的基础上补充（已存在则更新，勿重复）：
+
+```ini
+[GameNetLogger]
+LogLevel=1
+FilePrinting=True
+ConsolePrinting=False
+ScreenPrinting=False
+Verbose=False
+```
+
+重新打开炉石后生效。[HDT 配置说明](https://github.com/HearthSim/Hearthstone-Deck-Tracker/wiki/Setting-up-the-log.config)解释了日志配置位置及重启要求。HRL 当前不会自动修改此文件，也不修改游戏的单文件日志大小限制。遇到日志停止更新时，仍会拒绝猜测其他 1119 连接；清理历史日志不能恢复当前已停止写入的日志。
+
+炉石历史日志清理在 HRL 启动时及其后每 30 分钟于后台检查一次；未找到唯一炉石进程则跳过，不猜测安装位置。仅统计实际游戏安装目录 `Logs` 下符合 `Hearthstone_yyyy_MM_dd_HH_mm_ss` 命名的会话中直接包含的普通 `.log` 文件；总量超过 256 MiB 时，从最旧会话开始删除至不高于 192 MiB，单个文件不会被截断。当前进程启动前 10 秒至今的会话、创建时间落在此区间的会话以及最新会话全部保留；可清理文件不足时允许高于水位。
+
+清理不跟随路径上的重解析点，不递归删除目录，不处理其他扩展名；删除前复核路径、长度及修改时间，变化或锁定文件跳过。退出时取消后续清理，清理失败与拔线互不影响。只写本地结果，不显示系统通知。该功能不修改游戏日志配置，不解除客户端的 10 MB 单文件上限，也不能让已停止写入的日志恢复。
 
 运行数据保存在 `%LOCALAPPDATA%\HsReconnectLite\`，沿用旧版目录以兼容已有配置。`overlay.ini` 保存快捷键、按钮显示状态和位置；缺少或损坏的字段回退到默认值。保存失败不会破坏原文件，快捷键保存失败则保留原绑定。
 

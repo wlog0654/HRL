@@ -116,6 +116,8 @@ namespace HsReconnectLite {
         HotkeyDialog hotkeyDialog;
         readonly ContextMenuStrip menu;
         readonly System.Windows.Forms.Timer timer;
+        readonly System.Threading.Timer logMaintenance;
+        int logMaintenanceRunning;
         readonly FloatingButton overlay;
         readonly ToolStripMenuItem overlayToggle;
         readonly OverlayPreferences preferences;
@@ -183,7 +185,27 @@ namespace HsReconnectLite {
                 timer = new System.Windows.Forms.Timer { Interval = idleProbe ? 7000 : 1500 };
                 timer.Tick += delegate { Program.Log("SMOKE PASS: tray and floating button started; no disconnect invoked."); ExitThread(); };
                 timer.Start();
+            } else {
+                var stop = actionStop.Token;
+                logMaintenance = new System.Threading.Timer(delegate { MaintainGameLogs(stop); }, null, 0, 30 * 60 * 1000);
             }
+        }
+        void MaintainGameLogs(CancellationToken stop) {
+            if (stop.IsCancellationRequested || Interlocked.Exchange(ref logMaintenanceRunning, 1) != 0) return;
+            try {
+                var games = Process.GetProcessesByName("Hearthstone");
+                try {
+                    // Resolve from the live game's actual path; never guess an installation.
+                    if (games.Length != 1) return;
+                    var game = games[0];
+                    string root = Path.Combine(Path.GetDirectoryName(game.MainModule.FileName), "Logs");
+                    var result = LogRetention.Clean(root, game.StartTime.ToUniversalTime(), 256L * 1024 * 1024, 192L * 1024 * 1024, stop);
+                    if (result.DeletedFiles > 0 || result.SkippedFiles > 0 || result.RemainingBytes > 256L * 1024 * 1024)
+                        Program.Log("LOG CLEANUP before=" + result.BeforeBytes + " remaining=" + result.RemainingBytes + " deleted=" + result.DeletedFiles + " skipped=" + result.SkippedFiles);
+                } finally { foreach (var game in games) game.Dispose(); }
+            } catch (OperationCanceledException) { }
+            catch (Exception ex) { Program.Log("LOG CLEANUP SKIPPED " + ex.Message); }
+            finally { Interlocked.Exchange(ref logMaintenanceRunning, 0); }
         }
         void RefreshHotkeyText() {
             string binding = hotkey.Current == null ? "快捷键未启用" : hotkey.Current.ToString();
@@ -326,6 +348,7 @@ namespace HsReconnectLite {
         protected override void ExitThreadCore() {
             if (exiting) return;
             exiting = true;
+            if (logMaintenance != null) logMaintenance.Dispose();
             actionStop.Cancel(); actionStop.Dispose();
             if (timer != null) { timer.Stop(); timer.Dispose(); }
             if (hotkeyDialog != null) hotkeyDialog.Close();

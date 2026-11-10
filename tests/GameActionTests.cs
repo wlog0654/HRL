@@ -96,11 +96,27 @@ class GameActionTests {
             && !LauncherWindowPolicy.Matches("C:\\Games\\Battle.net.exe", "C:\\Games\\Battle.net.exe", "Battle.net", true, true));
         string directory = Path.Combine(Path.GetTempPath(), "HrlGameActions-" + Guid.NewGuid().ToString("N"));
         string path = Path.Combine(directory, "battle-net-path.txt");
+        string unicodeDirectory = Path.Combine(directory, "游戏工具 With Spaces");
+        string unicodeLauncher = Path.Combine(unicodeDirectory, "Battle.net.exe");
+        string renamedLauncher = Path.Combine(unicodeDirectory, "Other.exe");
         try {
             Check("launcher path missing is recoverable", LauncherPreferences.Load(path) == null);
             Check("launcher path persists with spaces", LauncherPreferences.Save(path, "C:\\Game Tools\\Battle.net.exe") && LauncherPreferences.Load(path) == "C:\\Game Tools\\Battle.net.exe");
             Check("launcher path can be atomically replaced", LauncherPreferences.Save(path, "D:\\Battle.net.exe") && LauncherPreferences.Load(path) == "D:\\Battle.net.exe");
-        } finally { if (File.Exists(path)) File.Delete(path); if (Directory.Exists(directory)) Directory.Delete(directory); }
+            Directory.CreateDirectory(unicodeDirectory); File.WriteAllText(unicodeLauncher, "test fixture, never executed");
+            var validator = new WindowsGameRuntime();
+            Check("existing launcher supports Chinese and spaces", validator.LauncherExists(unicodeLauncher));
+            Check("Chinese launcher path survives persistence", LauncherPreferences.Save(path, unicodeLauncher) && LauncherPreferences.Load(path) == unicodeLauncher);
+            File.Move(unicodeLauncher, renamedLauncher);
+            Check("moved launcher is rejected before actions", !validator.LauncherExists(LauncherPreferences.Load(path)));
+            Check("different executable name rejected", !validator.LauncherExists(renamedLauncher));
+            Check("unconfigured launcher is recoverable", !validator.LauncherExists(null));
+        } finally {
+            if (File.Exists(unicodeLauncher)) File.Delete(unicodeLauncher);
+            if (File.Exists(renamedLauncher)) File.Delete(renamedLauncher);
+            if (Directory.Exists(unicodeDirectory)) Directory.Delete(unicodeDirectory);
+            if (File.Exists(path)) File.Delete(path); if (Directory.Exists(directory)) Directory.Delete(directory);
+        }
         Console.WriteLine("Failures: " + failed); return failed == 0 ? 0 : 1;
     }
 }
